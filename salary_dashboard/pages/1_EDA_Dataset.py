@@ -61,10 +61,14 @@ with st.expander("Categorical Feature Counts"):
 
 # --- Summary statistics ---
 with st.expander("Summary Statistics"):
-    st.dataframe(df.describe(include="all").T)
+    summary = df.describe(include="all").T
+    # Convert non-numeric entries to strings to avoid Arrow errors
+    summary = summary.applymap(lambda x: x if pd.api.types.is_number(x) else str(x))
+    st.dataframe(summary, use_container_width=True)
 
 # Column info
 with st.expander("Column Information"):
     dtypes = df.dtypes.reset_index()
     dtypes.columns = ["column", "dtype"]
-    st.dataframe(dtypes)
+    dtypes["dtype"] = dtypes["dtype"].astype(str)
+    st.dataframe(dtypes, use_container_width=True)

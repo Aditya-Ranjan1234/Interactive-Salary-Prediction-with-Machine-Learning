@@ -20,18 +20,37 @@ st.header("🤖 Model Training & Evaluation")
 if "training_results" not in st.session_state:
     st.session_state["training_results"] = None
 
-cols = st.columns(2)
-with cols[0]:
+params_col, sel_col = st.columns([1, 2])
+with params_col:
     test_size = st.slider("Test size", 0.1, 0.4, 0.2, 0.05)
-with cols[1]:
     random_state = st.number_input("Random state", min_value=0, value=42, step=1)
+    force_retrain = st.checkbox("Force retrain", value=False)
+
+with sel_col:
+    all_models = [
+        "Logistic Regression",
+        "Random Forest",
+        "Gradient Boosting",
+        "Support Vector Machine",
+        "K-Nearest Neighbors",
+        "XGBoost",
+    ]
+    selected_models = st.multiselect("Select algorithms to train", all_models, default=all_models)
 
 if st.button("Train / Retrain Models"):
-    with st.spinner("Training models, please wait…"):
-        df = load_data()
-        results = train_models(df, test_size=test_size, random_state=random_state)
-        st.session_state["training_results"] = results
-    st.success("Training complete!")
+    df = load_data()
+    progress = st.progress(0.0, text="Starting training…")
+    # train_models does internal caching; progress bar simulated
+    results = train_models(
+        df,
+        test_size=test_size,
+        random_state=random_state,
+        selected=selected_models,
+        force_retrain=force_retrain,
+    )
+    progress.progress(1.0, text="Training complete!")
+    st.session_state["training_results"] = results
+    st.success("Done (cached models skipped).")
 
 results = st.session_state["training_results"]
 if results:

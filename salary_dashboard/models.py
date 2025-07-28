@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pathlib
+import json
+import hashlib
 from typing import Dict, List
 
 import joblib
@@ -38,7 +40,13 @@ def _build_pipeline(model, numeric_cols: List[str], categorical_cols: List[str])
     )
 
 
-def train_models(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 42) -> Dict[str, Dict]:
+def train_models(
+    df: pd.DataFrame,
+    test_size: float = 0.2,
+    random_state: int = 42,
+    selected: List[str] | None = None,
+    force_retrain: bool = False,
+) -> Dict[str, Dict]:
     """Train several algorithms and return performance + models.
 
     Returns a mapping of model name to a dict with keys: pipeline, metrics, model_path.
@@ -53,7 +61,7 @@ def train_models(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 4
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    algorithms = {
+    algorithms: Dict[str, object] = {
         "Logistic Regression": LogisticRegression(max_iter=1000, n_jobs=-1),
         "Random Forest": RandomForestClassifier(n_estimators=300, random_state=random_state),
         "Gradient Boosting": GradientBoostingClassifier(random_state=random_state),
@@ -72,8 +80,55 @@ def train_models(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 4
             eval_metric="logloss",
         )
 
+    # Filter algorithms if user selected subset
+    if selected:
+        algorithms = {k: v for k, v in algorithms.items() if k in selected}
+
     results: Dict[str, Dict] = {}
+
+    # Prepare train/test once (outside loop)
+    df = clean_data(df)
+    numeric_cols, categorical_cols, target_col = get_feature_lists(df)
+    X = df.drop(columns=[target_col])
+    y = (df[target_col] == ">50K").astype(int)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state, stratify=y
+    )
+
+    # Create signature to detect if params changed
+    param_sig = hashlib.md5(json.dumps({"test_size": test_size, "random_state": random_state}).encode()).hexdigest()
+
     for name, estimator in algorithms.items():
+        model_base = name.replace(" ", "_").lower()
+        model_path = MODEL_DIR / f"{model_base}.joblib"
+        meta_path = MODEL_DIR / f"{model_base}.json"
+
+        # Decide whether to retrain
+        if not force_retrain and model_path.exists() and meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+                if meta.get("param_sig") == param_sig:
+                    pipe = joblib.load(model_path)
+                    y_pred = pipe.predict(X_test)
+                    metrics = {
+                        "accuracy": accuracy_score(y_test, y_pred),
+                        "precision": precision_score(y_test, y_pred),
+                        "recall": recall_score(y_test, y_pred),
+                        "f1": f1_score(y_test, y_pred),
+                    }
+                    results[name] = {
+                        "pipeline": pipe,
+                        "metrics": metrics,
+                        "model_path": str(model_path),
+                        "y_test": y_test,
+                        "X_test": X_test,
+                        "cached": True,
+                    }
+                    continue
+            except Exception:
+                pass  # fallback to retrain
+
+        # Train from scratch
         pipe = _build_pipeline(estimator, numeric_cols, categorical_cols)
         pipe.fit(X_train, y_train)
         y_pred = pipe.predict(X_test)
@@ -84,9 +139,10 @@ def train_models(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 4
             "f1": f1_score(y_test, y_pred),
         }
 
-        # Persist model for reuse
-        model_path = MODEL_DIR / f"{name.replace(' ', '_').lower()}.joblib"
+        # Persist model and metadata
         joblib.dump(pipe, model_path)
+        meta = {"param_sig": param_sig}
+        meta_path.write_text(json.dumps(meta))
 
         results[name] = {
             "pipeline": pipe,
