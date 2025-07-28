@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+
+# Logs and local data
+*.log
+*.csv~
+
+# IDE settings
+.vscode/
+.idea/
+
+# Streamlit artifacts
+salary_dashboard/artifacts/
+
+# OS files
+.DS_Store
+Thumbs.db
